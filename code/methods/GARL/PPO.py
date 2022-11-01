@@ -20,6 +20,7 @@ class PPO:
         advantage_s = (advantage_s - advantage_s.mean()) / (advantage_s.std() + 1e-5)
 
         role = self.ac.__class__.__name__
+
         for _ in range(self.method_conf['buffer_replay_time']):
             data_generator = rollout.minibatch_generator(advantage_s, role)
             for sample_mini_batch in data_generator:

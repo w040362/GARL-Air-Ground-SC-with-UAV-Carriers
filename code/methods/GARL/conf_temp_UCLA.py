@@ -1,10 +1,10 @@
 from util import *
 
 METHOD_CONF = {
-    'method_name': __file__.split('/')[-2],
+    'method_name': __file__.split(os.sep)[-2],
     'gpu_id': 0,
     'seed': 2,
-    'env_num': 2,
+    'env_num': 1,
     # ---------algo------------
     'lr': 2.5e-4,
     'eps': 1e-5,
@@ -22,7 +22,7 @@ METHOD_CONF = {
     # ----------train test-----------
     'train_iter': int(1e4),
     'continue_train_start_iter_id': 0,
-    'test_num': 50,
+    'test_num': 5,
     # ----------lr decay-----------
     'decay_rate': 0.9995,
     'decay_start_iter_id': 3000,

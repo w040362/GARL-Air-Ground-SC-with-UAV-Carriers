@@ -1,8 +1,8 @@
 from util import *
 
 DATASET_CONF = {
-    'dataset_name': os.path.abspath(__file__).split('/')[-2],
-    'dataset_path': '/' + os.path.join(*os.path.abspath(__file__).split('/')[:-1]),
+    'dataset_name': os.path.abspath(__file__).split(os.sep)[-2],
+    'dataset_path': os.sep.join(os.path.abspath(__file__).split(os.sep)[:-1]),
 
     # field conf
     'zone_id': 11,

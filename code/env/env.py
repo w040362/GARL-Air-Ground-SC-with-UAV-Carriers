@@ -87,6 +87,12 @@ class Env:
             UGV_UAVs_Group(ugv_uavs_group_id) for ugv_uavs_group_id in range(self.env_conf['UGV_UAVs_Group_num'])]
 
         # load pre_set dicts
+
+        # if os.name == 'nt':
+        #     self.dataset_conf['dataset_path'] = os.sep.join(os.path.abspath(__file__).split(os.sep)[:-1])
+        if os.name == 'posix':
+            self.dataset_conf['dataset_path'] += os.sep
+
         self.poi2coordxy_dict = \
             np.load(os.path.join(self.dataset_conf['dataset_path'], 'poi2coordxy_dict.npy'), allow_pickle=True)[()]
         self.poi_num = len(self.poi2coordxy_dict.keys())

@@ -12,11 +12,18 @@ class MainLog:
         self.log_conf = get_global_dict_value('log_conf')
 
         self.mode = mode
-        self.root_path = '/' + os.path.join(*os.path.abspath(__file__).split('/')[:-3], 'log')
+        if os.name == 'posix':
+            self.root_path = os.sep + os.path.join(*os.path.abspath(__file__).split(os.sep)[:-3], 'log')
+        elif os.name == 'nt':
+            self.root_path = os.sep.join(os.path.abspath(__file__).split(os.sep)[:-3]+['log'])
+
         self.dataset_name = self.dataset_conf['dataset_name']
         self.method_name = self.method_conf['method_name']
         if mode == 'train':
-            self.log_path = os.path.join(self.root_path, self.dataset_name, self.method_name)
+            self.time = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            self.param = "ugv_{}_uav_{}".format(self.env_conf['UGV_UAVs_Group_num'],
+                                                self.env_conf['uav_num_each_group'])
+            self.log_path = os.path.join(self.root_path, self.dataset_name, self.method_name, self.param, self.time)
             if os.path.exists(self.log_path):
                 shutil.rmtree(self.log_path)
             os.makedirs(self.log_path)
