@@ -373,6 +373,9 @@ def subp_test(process_id,
                     ################################## sublog work ####################################
                     sublog.gen_metrics_result(sub_iter_counter, env)
                     sublog.record_metrics_result()
+                    if sub_iter_counter == 0:
+                        sublog.record_trace(sub_iter_counter, env, sub_rollout_manager, mode='test', subp_id=process_id)
+                        # sublog.record_trace2(sub_iter_counter, env, sub_rollout_manager, mode='test', subp_id=process_id)
                     shared_ifdone.value = True
                     sub_iter_counter += 1
                     break

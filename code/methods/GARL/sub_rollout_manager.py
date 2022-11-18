@@ -86,21 +86,40 @@ class SubRolloutManager:
                             energy_consumption += uav.episode_log_info_dict['final_energy_consumption'][next_step] - \
                                                   uav.episode_log_info_dict['final_energy_consumption'][last_step]
                         # UGV_UAV_cooperation_ratio (cor)
+                        # 1st edition: 需要与论文统一
+                        # total_collect_data_time = 0.0
+                        # total_fly_time = 0.0
+                        # for uav_id in range(self.env_conf['uav_num_each_group']):
+                        #     uav = self.env.UGV_UAVs_Group_list[UGV_UAVs_Group_id].uav_list[uav_id]
+                        #     total_collect_data_time += uav.episode_log_info_dict['final_collect_data_time'][next_step] - \
+                        #            uav.episode_log_info_dict['final_collect_data_time'][last_step]
+                        #     total_fly_time += uav.episode_log_info_dict['final_fly_time'][next_step] - \
+                        #                                uav.episode_log_info_dict['final_fly_time'][last_step]
+                        # if total_fly_time > 0:
+                        #     cor = total_collect_data_time / total_fly_time
+                        # else:
+                        #     cor = 0
+
+                        # 2nd edition 使用episode cor指标
+                        # if self.env.final_total_relax_time > 0:
+                        #     cor = self.env.final_total_eff_relax_time / self.env.final_total_relax_time
+                        # else:
+                        #     cor = 0
+
+                        # 3rd edition uav_record
                         total_collect_data_time = 0.0
                         total_fly_time = 0.0
                         for uav_id in range(self.env_conf['uav_num_each_group']):
                             uav = self.env.UGV_UAVs_Group_list[UGV_UAVs_Group_id].uav_list[uav_id]
-                            total_collect_data_time += uav.episode_log_info_dict['final_collect_data_time'][next_step] - \
-                                   uav.episode_log_info_dict['final_collect_data_time'][last_step]
-                            total_fly_time += uav.episode_log_info_dict['final_fly_time'][next_step] - \
-                                                       uav.episode_log_info_dict['final_fly_time'][last_step]
+                            total_collect_data_time += uav.episode_log_info_dict['final_collect_data_time'][next_step]
+                            total_fly_time += uav.episode_log_info_dict['final_fly_time'][next_step]
                         if total_fly_time > 0:
                             cor = total_collect_data_time / total_fly_time
                         else:
                             cor = 0
 
                         # reward
-                        reward_collect = (self.method_conf['ugv_positive_factor'] * fairness * data_collection) / (
+                        reward_collect = (self.method_conf['ugv_positive_factor'] * fairness * cor * data_collection) / (
                                 energy_consumption + min_value)
                         reward_collect_clipped = np.clip(reward_collect, 0, self.method_conf['ugv_max_positive_reward'])
                         penalty = -self.method_conf['ugv_penalty_factor'] * hit / self.env_conf['uav_num_each_group']

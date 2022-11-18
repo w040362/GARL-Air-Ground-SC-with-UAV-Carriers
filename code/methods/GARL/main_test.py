@@ -57,6 +57,7 @@ def main():
                              + ' ecr: ' + str(np.round(ecr, 5)) \
                              + '\n'
                 print(report_str)
+                mainlog.record_report(report_str)
                 for shared_ifdone in shared_ifdone_list:
                     shared_ifdone.value = False
                 break

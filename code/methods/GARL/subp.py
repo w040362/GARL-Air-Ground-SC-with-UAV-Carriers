@@ -59,9 +59,10 @@ def subp(process_id,
             while True:
                 if not shared_ifdone.value:
                     fix_random_seed(get_global_dict_value('method_conf')['seed'] + process_id)
-                    # reset sub_rollouts
+                    # reset sub_rollouts before each episode
+                    # PPO每个episode都要清空样本
                     sub_rollout_manager.reset_sub_rollouts()
-                    # sync global model to local model
+                    # !! sync global model to local model
                     loc_ugv_network.load_state_dict(
                         torch.load(os.path.join(log_path, 'cur_ugv_model.pth'), map_location=torch.device('cpu')))
                     loc_uav_network.load_state_dict(
@@ -73,12 +74,13 @@ def subp(process_id,
                     for step_id in range(env_conf['max_step_num']):
                         #################### prepare step_UGV_input_dict start! ####################
                         step_UGV_input_dict = {}
+                        # UGV-MCGCN
                         for UGV_UAVs_Group_id in range(env_conf['UGV_UAVs_Group_num']):
                             # for UGV
                             ugv_id = UGV_UAVs_Group_id
                             # gen obs for ugv
-                            obs_X_B_u, obs_S_u, obs_neighbor_uids, obs_u_stopid_vector, obs_neighbor_stopids_vector, obs_LMatrix, obs_action_mask, obs_u_x = obs_generator.gen_ugv_obs_gnn(
-                                ugv_id)
+                            obs_X_B_u, obs_S_u, obs_neighbor_uids, obs_u_stopid_vector, obs_neighbor_stopids_vector, \
+                                obs_LMatrix, obs_action_mask, obs_u_x = obs_generator.gen_ugv_obs_gnn(ugv_id)
                             # gen h_tilde for ugv
                             h_tilde_s = loc_ugv_network.extract_feature_s_from_loc_obs_s(
                                 torch.tensor(obs_X_B_u, dtype=torch.float32).unsqueeze(0),
@@ -101,6 +103,7 @@ def subp(process_id,
                             step_UGV_input_dict[ugv_id]['g_u_list'] = [obs_u_x]
                             step_UGV_input_dict[ugv_id]['msg_H_neighbor_list'] = []
                             step_UGV_input_dict[ugv_id]['msg_G_neighbor_list'] = []
+                        # UGV-Comm
                         for comm_id in range(method_conf['Comm_layer_num']):
                             for UGV_UAVs_Group_id in range(env_conf['UGV_UAVs_Group_num']):
                                 # for UGV
@@ -127,6 +130,7 @@ def subp(process_id,
                             use_loc_ugv_network_flag = True
                             last_status = env.UGV_UAVs_Group_list[UGV_UAVs_Group_id].last_status
                             last_status_length = env.UGV_UAVs_Group_list[UGV_UAVs_Group_id].last_status_length
+                            # 无人机被释放2，召回无人机3且在召回时期，此时不需要计算下一步的无人车动作
                             if last_status == 2 or last_status == 3 and last_status_length < env_conf['call_step_num']:
                                 use_loc_ugv_network_flag = False
                             if use_loc_ugv_network_flag:
@@ -182,11 +186,13 @@ def subp(process_id,
                             elif method_conf['ugv_trace_type'] == 'stops_net':
                                 ugv_final_pos = env.stops_net_dict[env.UGV_UAVs_Group_list[
                                     UGV_UAVs_Group_id].ugv.cur_stop_id]['coordxy']
+                            # 判断下一status，与env.step()的判断一致
                             next_status = env.gen_next_status(last_status, last_status_length, signal,
                                                               env.UGV_UAVs_Group_list[UGV_UAVs_Group_id].wait_step_num,
                                                               env.UGV_UAVs_Group_list[UGV_UAVs_Group_id].call_step_num,
                                                               ugv_final_pos)
                             need_action4uav_flag = False
+                            # 释放uav
                             if next_status == 2:
                                 need_action4uav_flag = True
                             if need_action4uav_flag:
@@ -196,30 +202,27 @@ def subp(process_id,
                                     # gen action for uav
                                     value_s, action_s, action_log_prob_s = loc_uav_network.get_action_s(
                                         torch.tensor(uav_loc_obs, dtype=torch.float32).unsqueeze(0))
+                                    # 除以根号2，可以去掉试试
                                     actions4UGV_UAVs_Group_list[UGV_UAVs_Group_id]['UAVs'].append(
-                                        np.array(action_s[0], dtype=np.float32) * env_conf[
-                                            'max_uav_move_dis_each_step'] / (2 ** 0.5))
+                                        np.array(action_s[0], dtype=np.float32) * env_conf['max_uav_move_dis_each_step'] / (2 ** 0.5))
                                     uav_sub_rollout_id = str(ugv_id) + '_' + str(uav_id)
                                     sub_rollout_manager.sub_rollout_dict['UAV'][
                                         uav_sub_rollout_id].append_rollout_element('loc_obs_s', uav_loc_obs)
                                     sub_rollout_manager.sub_rollout_dict['UAV'][
-                                        uav_sub_rollout_id].append_rollout_element('value_s', np.array(value_s[0],
-                                                                                                       dtype=np.float32))
+                                        uav_sub_rollout_id].append_rollout_element('value_s', np.array(value_s[0], dtype=np.float32))
                                     sub_rollout_manager.sub_rollout_dict['UAV'][
-                                        uav_sub_rollout_id].append_rollout_element('action_s', np.array(action_s[0],
-                                                                                                        dtype=np.float32))
+                                        uav_sub_rollout_id].append_rollout_element('action_s', np.array(action_s[0], dtype=np.float32))
                                     sub_rollout_manager.sub_rollout_dict['UAV'][
                                         uav_sub_rollout_id].append_rollout_element('action_log_prob_s',
-                                                                                   np.array(action_log_prob_s[0],
-                                                                                            dtype=np.float32))
+                                                                                   np.array(action_log_prob_s[0], dtype=np.float32))
                                     sub_rollout_manager.sub_rollout_dict['UAV'][
                                         uav_sub_rollout_id].append_rollout_element('step_id_s', step_id)
                             else:
                                 add_new_episode_buffer_flag = False
                                 uav_id = 0
                                 uav_sub_rollout_id = str(ugv_id) + '_' + str(uav_id)
-                                if step_id - 1 in sub_rollout_manager.sub_rollout_dict['UAV'][
-                                    uav_sub_rollout_id].sub_episode_buffer_list[-1]['step_id_s']:
+                                # 上一步还在飞行，所以这一步是返回无人车？status=3
+                                if step_id - 1 in sub_rollout_manager.sub_rollout_dict['UAV'][uav_sub_rollout_id].sub_episode_buffer_list[-1]['step_id_s']:
                                     add_new_episode_buffer_flag = True
                                 if add_new_episode_buffer_flag:
                                     for uav_id in range(env_conf['uav_num_each_group']):
@@ -229,25 +232,27 @@ def subp(process_id,
                                         value_s = loc_uav_network.get_value_s(
                                             torch.tensor(uav_loc_obs, dtype=torch.float32).unsqueeze(0))
                                         uav_sub_rollout_id = str(ugv_id) + '_' + str(uav_id)
+                                        # 为何还要采集样本，用于V(state')?
                                         sub_rollout_manager.sub_rollout_dict['UAV'][
-                                            uav_sub_rollout_id].append_rollout_element('value_s', np.array(value_s[0],
-                                                                                                           dtype=np.float32))
+                                            uav_sub_rollout_id].append_rollout_element('value_s', np.array(value_s[0], dtype=np.float32))
                                         sub_rollout_manager.sub_rollout_dict['UAV'][
                                             uav_sub_rollout_id].append_rollout_element('step_id_s', step_id)
-                                        sub_rollout_manager.sub_rollout_dict['UAV'][
-                                            uav_sub_rollout_id].add_new_sub_episode_buffer()
+                                        # 添加一个新的episode
+                                        sub_rollout_manager.sub_rollout_dict['UAV'][uav_sub_rollout_id].add_new_sub_episode_buffer()
                         # env step
                         env.step(actions4UGV_UAVs_Group_list)
                         obs_generator.step()
+                    # end for
                     # finish gen SubRollout.sub_episode_buffer_list
                     #################### prepare step_UGV_input_dict start! ####################
+                    # 结束之后再进行一步动作模拟，用于计算V(s')，然后将最后一个记录与空记录删除
                     step_UGV_input_dict = {}
                     for UGV_UAVs_Group_id in range(env_conf['UGV_UAVs_Group_num']):
                         # for UGV
                         ugv_id = UGV_UAVs_Group_id
                         # gen obs for ugv
-                        obs_X_B_u, obs_S_u, obs_neighbor_uids, obs_u_stopid_vector, obs_neighbor_stopids_vector, obs_LMatrix, obs_action_mask, obs_u_x = obs_generator.gen_ugv_obs_gnn(
-                            ugv_id)
+                        obs_X_B_u, obs_S_u, obs_neighbor_uids, obs_u_stopid_vector, obs_neighbor_stopids_vector, \
+                            obs_LMatrix, obs_action_mask, obs_u_x = obs_generator.gen_ugv_obs_gnn(ugv_id)
                         # gen h_tilde for ugv
                         h_tilde_s = loc_ugv_network.extract_feature_s_from_loc_obs_s(
                             torch.tensor(obs_X_B_u, dtype=torch.float32).unsqueeze(0),
@@ -285,16 +290,7 @@ def subp(process_id,
                             msg_G_neighbor = np.stack(msg_G_neighbor_list, axis=0)
                             step_UGV_input_dict[ugv_id]['msg_H_neighbor_list'].append(msg_H_neighbor)
                             step_UGV_input_dict[ugv_id]['msg_G_neighbor_list'].append(msg_G_neighbor)
-                            h_u_s_prime, g_u_s_prime = loc_ugv_network.comm_variant.comm_with_neighbors(comm_id,
-                                                                                           torch.tensor(h_u,
-                                                                                                        dtype=torch.float32).unsqueeze(
-                                                                                               0), torch.tensor(g_u,
-                                                                                                                dtype=torch.float32).unsqueeze(
-                                    0), torch.tensor(msg_H_neighbor, dtype=torch.float32).unsqueeze(0),
-                                                                                           torch.tensor(
-                                                                                               msg_G_neighbor,
-                                                                                               dtype=torch.float32).unsqueeze(
-                                                                                               0))
+                            h_u_s_prime, g_u_s_prime = loc_ugv_network.comm_variant.comm_with_neighbors(comm_id, torch.tensor(h_u, dtype=torch.float32).unsqueeze(0), torch.tensor(g_u, dtype=torch.float32).unsqueeze(0), torch.tensor(msg_H_neighbor, dtype=torch.float32).unsqueeze(0), torch.tensor(msg_G_neighbor, dtype=torch.float32).unsqueeze(0))
                             step_UGV_input_dict[ugv_id]['h_u_list'].append(np.array(h_u_s_prime[0]))
                             step_UGV_input_dict[ugv_id]['g_u_list'].append(np.array(g_u_s_prime[0]))
                     #################### prepare step_UGV_input_dict finish! ####################
@@ -305,12 +301,10 @@ def subp(process_id,
                         H_u = np.stack(step_UGV_input_dict[ugv_id]['h_u_list'], axis=0)
                         G_u = np.stack(step_UGV_input_dict[ugv_id]['g_u_list'], axis=0)
                         value_s, _, _ = loc_ugv_network.get_action_s(
-                            torch.tensor(step_UGV_input_dict[ugv_id]['obs_X_B_u'],
-                                         dtype=torch.float32).unsqueeze(0),
+                            torch.tensor(step_UGV_input_dict[ugv_id]['obs_X_B_u'], dtype=torch.float32).unsqueeze(0),
                             torch.tensor(H_u, dtype=torch.float32).unsqueeze(0),
                             torch.tensor(G_u, dtype=torch.float32).unsqueeze(0),
-                            torch.tensor(step_UGV_input_dict[ugv_id]['obs_action_mask'],
-                                         dtype=torch.float32).unsqueeze(0),
+                            torch.tensor(step_UGV_input_dict[ugv_id]['obs_action_mask'], dtype=torch.float32).unsqueeze(0),
                         )
                         ugv_sub_rollout_id = str(ugv_id)
                         sub_rollout_manager.sub_rollout_dict['UGV'][ugv_sub_rollout_id].append_rollout_element(
@@ -321,32 +315,34 @@ def subp(process_id,
                         add_last_step_flag = False
                         uav_id = 0
                         uav_sub_rollout_id = str(ugv_id) + '_' + str(uav_id)
+                        # uav episode未进行完，如果结束，会新创建一个episode_list判断为false
                         if env_conf['max_step_num'] - 1 in \
-                                sub_rollout_manager.sub_rollout_dict['UAV'][uav_sub_rollout_id].sub_episode_buffer_list[
-                                    -1][
-                                    'step_id_s']:
+                                sub_rollout_manager.sub_rollout_dict['UAV'][uav_sub_rollout_id].sub_episode_buffer_list[-1]['step_id_s']:
                             add_last_step_flag = True
                         if add_last_step_flag:
                             for uav_id in range(env_conf['uav_num_each_group']):
                                 # gen obs for uav
                                 uav_loc_obs = obs_generator.gen_uav_obs(ugv_id, uav_id)
                                 # gen value for uav
-                                value_s = loc_uav_network.get_value_s(
-                                    torch.tensor(uav_loc_obs, dtype=torch.float32).unsqueeze(0))
+                                value_s = loc_uav_network.get_value_s(torch.tensor(uav_loc_obs, dtype=torch.float32).unsqueeze(0))
                                 uav_sub_rollout_id = str(ugv_id) + '_' + str(uav_id)
                                 sub_rollout_manager.sub_rollout_dict['UAV'][uav_sub_rollout_id].append_rollout_element(
                                     'value_s', np.array(value_s[0], dtype=np.float32))
                                 sub_rollout_manager.sub_rollout_dict['UAV'][uav_sub_rollout_id].append_rollout_element(
                                     'step_id_s', env_conf['max_step_num'])
+                    # 清空空样本，比如uav新创建的一个episode
                     sub_rollout_manager.delete_last_empty_sub_episode_buffer()
                     # gen reward
                     sub_rollout_manager.gen_rewards()
-                    # gen returns
+                    # gen returns, 会删除最后一个多余的样本
                     sub_rollout_manager.gen_returns()
                     ################################## sublog work ####################################
                     sublog.record_sub_rollout_dict(sub_rollout_manager)
                     sublog.gen_metrics_result(sub_iter_counter, env)
                     sublog.record_metrics_result()
+                    if process_id == 0 and sub_iter_counter % 400 == 0:
+                        sublog.record_trace(sub_iter_counter, env, sub_rollout_manager)
+                        # sublog.record_trace2(sub_iter_counter, env, sub_rollout_manager)
                     shared_ifdone.value = True
                     sub_iter_counter += 1
                     break

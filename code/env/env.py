@@ -6,30 +6,39 @@ class UGV:
         self.method_conf = get_global_dict_value('method_conf')
         self.ugv_id = ugv_id
         if self.method_conf['ugv_trace_type'] == 'roads_net':
+            # 对于无停靠站环境,记录ugv在道路上的实时位置
             self.final_road_pos = None
+            # 记录stop点位与路径信息
             self.final_passed_road_node_id_list = None
             self.passed_road_node_id_list = None
         self.cur_stop_id = None
+        # ugv保存的每个poi点位的值，初始化为超参数max，之后需要转为每个stop的对应的poi值信息（实际为各poi点累加）
         self.cur_loc_poi_value_array = None
         self.obs_X_B_u = None
         self.episode_log_info_dict = {}
 
     def add_log_info(self):
+        # 日志：记录路径
         if self.method_conf['ugv_trace_type'] == 'roads_net':
             self.episode_log_info_dict['final_road_pos'].append(copy.deepcopy(self.final_road_pos))
             self.episode_log_info_dict['final_passed_road_node_id_list'].append(
                 copy.deepcopy(self.final_passed_road_node_id_list))
+        # 停靠站网络
         self.episode_log_info_dict['cur_stop_id_list'].append(copy.deepcopy(self.cur_stop_id))
 
 
 class UAV:
     def __init__(self, uav_id):
         self.uav_id = uav_id
+        # uav的位置
         self.final_pos = None
+        # uav的当前能量与能量损耗
         self.final_energy = None
         self.final_energy_consumption = None
+        # uav碰撞障碍以及飞出ugv范围的次数
         self.final_hit = None
         self.final_out_of_ugv = None
+        # 每个poi采集的数据量，以及采集的次数
         self.final_data_collection = None
         self.final_poi_visit_time = None
         self.final_collect_data_time = None
@@ -54,7 +63,7 @@ class UGV_UAVs_Group:
         self.env_conf = get_global_dict_value('env_conf')
         self.method_conf = get_global_dict_value('method_conf')
         self.log_conf = get_global_dict_value('log_conf')
-
+        # 创建ugv与uav_group
         self.ugv_uavs_group_id = ugv_uavs_group_id
         self.ugv = UGV(self.ugv_uavs_group_id)
         self.uav_list = [UAV(uav_id) for uav_id in range(self.env_conf['uav_num_each_group'])]
@@ -93,68 +102,73 @@ class Env:
         if os.name == 'posix':
             self.dataset_conf['dataset_path'] += os.sep
 
-        self.poi2coordxy_dict = \
-            np.load(os.path.join(self.dataset_conf['dataset_path'], 'poi2coordxy_dict.npy'), allow_pickle=True)[()]
+        # 保存各个poi的坐标，以及各点位的数据量
+        self.poi2coordxy_dict = np.load(os.path.join(self.dataset_conf['dataset_path'], 'poi2coordxy_dict.npy'), allow_pickle=True)[()]
         self.poi_num = len(self.poi2coordxy_dict.keys())
+        # value_dict: {coordxy, value}
         self.poi2coordxy_value_dict = \
             np.load(os.path.join(self.dataset_conf['dataset_path'], 'poi2coordxy_value_dict_' + str(
                 self.env_conf['poi_value_min']) + '_' + str(
                 self.env_conf['poi_value_max']) + '.npy'), allow_pickle=True)[()]
+
+        # 画图时需要使用
         self.poi_coordxy_array = np.zeros([self.poi_num, 2], dtype=np.float32)
         for poi_id in range(self.poi_num):
             self.poi_coordxy_array[poi_id][0] = self.poi2coordxy_value_dict[poi_id]['coordxy'][0]
             self.poi_coordxy_array[poi_id][1] = self.poi2coordxy_value_dict[poi_id]['coordxy'][1]
+
+        # 确定的环境初始化数据量
         self.poi_init_value_array = np.zeros(self.poi_num, dtype=np.float32)
         for poi_id in range(self.poi_num):
             self.poi_init_value_array[poi_id] = self.poi2coordxy_value_dict[poi_id]['value']
+        # poi: {在采集范围内的所有cell}
         self.poi2cell_dict = np.load(os.path.join(self.dataset_conf['dataset_path'],
                                                   'poi2cell_dict_' + str(
                                                       self.env_conf['uav_cellset_grid_size']) + '_' + str(
-                                                      self.env_conf['uav_sensing_range']) + '.npy'), allow_pickle=True)[
-            ()]
-        self.uav_cellset = \
-            np.load(os.path.join(self.dataset_conf['dataset_path'],
-                                 'uav_cellset_' + str(self.env_conf['uav_cellset_grid_size']) + '.npy'),
-                    allow_pickle=True)[()]
-        self.uav_cell2poi_dict = \
-            np.load(os.path.join(self.dataset_conf['dataset_path'],
-                                 'uav_cell2poi_dict_' + str(self.env_conf['uav_cellset_grid_size']) + '_' + str(
-                                     self.env_conf['uav_sensing_range']) + '.npy'), allow_pickle=True)[()]
-        self.roads_cellset = \
-            np.load(os.path.join(self.dataset_conf['dataset_path'],
-                                 'roads_cellset_' + str(self.env_conf['uav_cellset_grid_size']) + '.npy'),
-                    allow_pickle=True)[()]
+                                                      self.env_conf['uav_sensing_range']) + '.npy'), allow_pickle=True)[()]
+        # 采集所有uav可以飞行到的cell，划去建筑物占用空间
+        self.uav_cellset = np.load(os.path.join(self.dataset_conf['dataset_path'],
+                                                'uav_cellset_' + str(self.env_conf['uav_cellset_grid_size']) + '.npy'), allow_pickle=True)[()]
+        # 在uav采集范围内的cell以及与poi的对应关系
+        self.uav_cell2poi_dict = np.load(os.path.join(self.dataset_conf['dataset_path'],
+                                                      'uav_cell2poi_dict_' + str(self.env_conf['uav_cellset_grid_size']) + '_' + str(
+                                                            self.env_conf['uav_sensing_range']) + '.npy'), allow_pickle=True)[()]
+        # 道路覆盖的cell
+        self.roads_cellset = np.load(os.path.join(self.dataset_conf['dataset_path'],
+                                                  'roads_cellset_' + str(self.env_conf['uav_cellset_grid_size']) + '.npy'), allow_pickle=True)[()]
+        # 每个道路节点的坐标以及邻接点
         self.roads_net_dict = \
             np.load(os.path.join(self.dataset_conf['dataset_path'], 'roads_net_dict.npy'), allow_pickle=True)[()]
+        # 每个stop节点的坐标以及邻接点，所在道路段以及位置pos
         self.stops_net_dict = \
             np.load(os.path.join(self.dataset_conf['dataset_path'],
                                  'stops_net_dict_' + str(self.env_conf['stop_gap']) + '.npy'), allow_pickle=True)[()]
-        self.stop2cell_dict = np.load(os.path.join(self.dataset_conf['dataset_path'],
-                                                   'stop2cell_dict_' + str(
-                                                       self.env_conf['uav_cellset_grid_size']) + '_' + str(
-                                                       self.env_conf['stop_poi_max_dis']) + '.npy'), allow_pickle=True)[
-            ()]
+        # 每个stop附近的cell?
+        # self.stop2cell_dict = np.load(os.path.join(self.dataset_conf['dataset_path'],
+        #                                            'stop2cell_dict_' + str(
+        #                                                self.env_conf['uav_cellset_grid_size']) + '_' + str(
+        #                                                self.env_conf['stop_poi_max_dis']) + '.npy'), allow_pickle=True)[()]
         self.stop_num = len(self.stops_net_dict)
+        # stops_pois_AdjMatrix 将poi数据量映射到stop上，作为图的节点信息，size(stop_num, poi_num)
         self.stops_pois_AdjMatrix = np.load(os.path.join(self.dataset_conf['dataset_path'],
-                                                         'stops_pois_AdjMatrix_' + str(
-                                                             self.env_conf['stop_gap']) + '_' + str(
-                                                             self.env_conf['stop_poi_max_dis']) + '.npy'),
+                                                         'stops_pois_AdjMatrix_' + str(self.env_conf['stop_gap']) + '_' + str(self.env_conf['stop_poi_max_dis']) + '.npy'),
                                             allow_pickle=True)
+        # shortest path between stops (stop_n*stop_n)
         self.stops_net_SP_dict = np.load(os.path.join(self.dataset_conf['dataset_path'],
                                                       'stops_net_SP_dict_' + str(self.env_conf['stop_gap']) + '.npy'),
                                          allow_pickle=True)[()]
-        self.episode_log_info_dict = {}
-        # helpers
-        self.ec_upper_bound = self.env_conf['UGV_UAVs_Group_num'] * self.env_conf['uav_num_each_group'] * self.env_conf[
-            'max_uav_move_dis_each_step'] * self.env_conf['max_step_num'] * self.env_conf[
-                                  'uav_move_energy_consume_ratio']
-
         self.stops_net_SP_Matrix = np.ones([self.stop_num, self.stop_num], dtype=np.float32)
         self.stops_net_SP_Matrix *= 1e3
         for key in self.stops_net_SP_dict:
             start_stop_id = int(key.split('_')[0])
             goal_stop_id = int(key.split('_')[1])
             self.stops_net_SP_Matrix[start_stop_id, goal_stop_id] = self.stops_net_SP_dict[key]['min_dis']
+
+        self.episode_log_info_dict = {}
+        # overall energy?
+        self.ec_upper_bound = self.env_conf['UGV_UAVs_Group_num'] * self.env_conf['uav_num_each_group'] * self.env_conf[
+            'max_uav_move_dis_each_step'] * self.env_conf['max_step_num'] * self.env_conf[
+                                  'uav_move_energy_consume_ratio']
 
         # gen Laplacian Matrix
         self.stops_net_AdjMatrix = np.zeros([self.stop_num, self.stop_num], dtype=np.float32)
@@ -163,9 +177,8 @@ class Env:
                 self.stops_net_AdjMatrix[stop_id, next_stop_id] = 1
         self.stops_net_AdjMatrix_tilde = self.stops_net_AdjMatrix + np.identity(self.stop_num, dtype=np.float32)
         self.stops_net_DegreeMatrix_tilde = np.diag(np.sum(self.stops_net_AdjMatrix_tilde, axis=1))
-        self.stops_net_LaplacianMatrix = fractional_matrix_power(self.stops_net_DegreeMatrix_tilde,
-                                                                 -0.5) @ self.stops_net_AdjMatrix_tilde @ fractional_matrix_power(
-            self.stops_net_DegreeMatrix_tilde, -0.5)
+        self.stops_net_LaplacianMatrix = fractional_matrix_power(self.stops_net_DegreeMatrix_tilde, -0.5) @ \
+                                         self.stops_net_AdjMatrix_tilde @ fractional_matrix_power(self.stops_net_DegreeMatrix_tilde, -0.5)
 
         if 'dsp_q' in self.method_conf:
             # gen pre_S_Matrix
@@ -174,16 +187,16 @@ class Env:
                 for j in range(self.stop_num):
                     if self.stops_net_SP_Matrix[i, j] <= self.method_conf['dsp_q']:
                         self.pre_S_Matrix[i, j] = 1 / (1 + self.stops_net_SP_Matrix[i, j])
-        # gen ugv_move_mask_Matrix
+
+        # gen ugv_move_mask_Matrix, 大于某个距离的两个点不允许互通
         self.ugv_move_mask_Matrix = np.zeros([self.stop_num, self.stop_num + 2], dtype=np.float32)
         for i in range(self.stop_num):
             for j in range(self.stop_num):
-                if self.env_conf['stop_gap'] * self.stops_net_SP_Matrix[i, j] <= self.env_conf[
-                    'max_ugv_move_dis_each_step']:
+                if self.env_conf['stop_gap'] * self.stops_net_SP_Matrix[i, j] <= self.env_conf['max_ugv_move_dis_each_step']:
                     self.ugv_move_mask_Matrix[i, j] = 1
         self.ugv_move_mask_Matrix[:, -2:] = 1
 
-        # gen UGV_init_obs_X_B_u
+        # 初始化ugv停靠站全局感知obs_X_B_u
         self.UGV_init_obs_X_B_u = np.zeros([self.stop_num, 3], dtype=np.float32)
         self.UGV_init_loc_poi_value_array = self.env_conf['poi_value_max'] * np.ones(self.poi_num, dtype=np.float32)
         self.stop_max_value = self.env_conf['poi_value_max'] * np.max(np.sum(self.stops_pois_AdjMatrix, axis=1))
@@ -192,7 +205,7 @@ class Env:
             self.UGV_init_obs_X_B_u[stop_id, 1] = self.stops_net_dict[stop_id]['coordxy'][1]
         self.UGV_init_obs_X_B_u[:, 2] = np.sum(self.UGV_init_loc_poi_value_array * self.stops_pois_AdjMatrix, axis=1)
 
-        # gen road_node_id_pair2stop_id_dict
+        # 标记每个道路段上包含的stop节点 road_node_id_pair2stop_id_dict
         self.road_node_id_pair2stop_id_dict = {}
         for stop_id in self.stops_net_dict:
             road_pos = self.stops_net_dict[stop_id]['road_pos']
@@ -218,24 +231,25 @@ class Env:
         # gen UGV_init_stop_id
         self.UGV_init_stop_id = self.road_pos2stop_id(self.dataset_conf['UGV_init_road_pos'])
 
-
-
     def add_log_info(self):
         self.episode_log_info_dict['final_poi_visit_time'].append(copy.deepcopy(self.final_poi_visit_time))
         self.episode_log_info_dict['poi_cur_value_array'].append(copy.deepcopy(self.poi_cur_value_array))
 
     def reset(self):
         self.cur_step = 0
+        # 初始poi值与实时poi值
         self.poi_last_value_array = copy.deepcopy(self.poi_init_value_array)
         self.poi_cur_value_array = copy.deepcopy(self.poi_init_value_array)
+        # 计算评价指标
         self.final_poi_visit_time = np.zeros(self.poi_num, dtype=np.float32)
         self.final_total_hit = 0
         self.final_total_out_of_ugv = 0
         self.final_energy_consumption = 0
         self.final_total_collect_data_time = 0
         self.final_total_fly_time = 0
-        self.final_total_eff_relax_time = 0
+        self.final_total_eff_relax_time = 0     # 释放无人机且收集到数据的次数
         self.final_total_relax_time = 0
+        # 对每个无人车以及车上的所有无人机
         for UGV_UAVs_Group in self.UGV_UAVs_Group_list:
             UGV_UAVs_Group.episode_log_info_dict = {}
             UGV_UAVs_Group.last_status = 0
@@ -250,12 +264,15 @@ class Env:
                 ugv.final_passed_road_node_id_list = []
                 ugv.passed_road_node_id_list = []
                 ugv.final_road_pos = self.dataset_conf['UGV_init_road_pos']
+            # 当前路径记录
             ugv.episode_log_info_dict['cur_stop_id_list'] = []
             ugv.cur_stop_id = self.UGV_init_stop_id
+            # poi数据量记录
             ugv.cur_loc_poi_value_array = copy.deepcopy(self.UGV_init_loc_poi_value_array)
             ugv.obs_X_B_u = copy.deepcopy(self.UGV_init_obs_X_B_u)
 
             ugv.add_log_info()
+            # 对每个无人机初始化
             for uav in UGV_UAVs_Group.uav_list:
                 uav.episode_log_info_dict = {}
                 uav.episode_log_info_dict['final_pos'] = []
@@ -295,6 +312,7 @@ class Env:
         pos = (pos_coordx, pos_coordy)
         return pos
 
+    # 输入当前路网位置，选择最近的stop节点，使用在ca_dm中(ca_cm中也有但不必要，因为不需要选目标停靠站）
     def road_pos2stop_id(self, road_pos):
         stop_id_list = []
         if road_pos['progress'] < 1e-5:
@@ -364,26 +382,27 @@ class Env:
                             tmp_start_road_node_id = tmp_next_road_node_id
                             tmp_next_road_node_id = sub_next_road_node_id
                             break
-            start_road_node = self.roads_net_dict[road_pos['end_road_node_id']]
-            for next_road_node_id in start_road_node['next_node_list']:
-                if next_road_node_id == road_pos['start_road_node_id']:
-                    continue
-                tmp_start_road_node_id = road_pos['end_road_node_id']
-                tmp_next_road_node_id = next_road_node_id
-                while True:
-                    key = str(tmp_start_road_node_id) + '_' + str(tmp_next_road_node_id)
-                    equa_key = str(tmp_next_road_node_id) + '_' + str(tmp_start_road_node_id)
-                    if key in self.road_node_id_pair2stop_id_dict or equa_key in self.road_node_id_pair2stop_id_dict:
-                        if key in self.road_node_id_pair2stop_id_dict:
-                            stop_id_list.extend(self.road_node_id_pair2stop_id_dict[key])
-                        else:
-                            stop_id_list.extend(self.road_node_id_pair2stop_id_dict[equa_key])
-                        break
-                    for sub_next_road_node_id in self.roads_net_dict[tmp_next_road_node_id]['next_node_list']:
-                        if sub_next_road_node_id != tmp_start_road_node_id:
-                            tmp_start_road_node_id = tmp_next_road_node_id
-                            tmp_next_road_node_id = sub_next_road_node_id
-                            break
+            # 可能重复？
+            # start_road_node = self.roads_net_dict[road_pos['end_road_node_id']]
+            # for next_road_node_id in start_road_node['next_node_list']:
+            #     if next_road_node_id == road_pos['start_road_node_id']:
+            #         continue
+            #     tmp_start_road_node_id = road_pos['end_road_node_id']
+            #     tmp_next_road_node_id = next_road_node_id
+            #     while True:
+            #         key = str(tmp_start_road_node_id) + '_' + str(tmp_next_road_node_id)
+            #         equa_key = str(tmp_next_road_node_id) + '_' + str(tmp_start_road_node_id)
+            #         if key in self.road_node_id_pair2stop_id_dict or equa_key in self.road_node_id_pair2stop_id_dict:
+            #             if key in self.road_node_id_pair2stop_id_dict:
+            #                 stop_id_list.extend(self.road_node_id_pair2stop_id_dict[key])
+            #             else:
+            #                 stop_id_list.extend(self.road_node_id_pair2stop_id_dict[equa_key])
+            #             break
+            #         for sub_next_road_node_id in self.roads_net_dict[tmp_next_road_node_id]['next_node_list']:
+            #             if sub_next_road_node_id != tmp_start_road_node_id:
+            #                 tmp_start_road_node_id = tmp_next_road_node_id
+            #                 tmp_next_road_node_id = sub_next_road_node_id
+            #                 break
         min_dis = 1e5
         target_stop_id = -1
         for stop_id in stop_id_list:
@@ -502,7 +521,7 @@ class Env:
                         else:
                             ugv_cur_road_pos['progress'] += left_move_dis2choosen_road_node / choosen_road_length
                     break
-                # can reach choosen road_node
+                # can reach chosen road_node
                 else:
                     ugv_cur_road_pos['start_road_node_id'] = choosen_road_node_id
                     ugv_cur_road_pos['end_road_node_id'] = self.roads_net_dict[choosen_road_node_id]['next_node_list'][
@@ -618,12 +637,10 @@ class Env:
             ugv.obs_X_B_u[:, 2] = np.sum(ugv.cur_loc_poi_value_array * self.stops_pois_AdjMatrix, axis=1)
         ugv.cur_stop_id = target_stop_id
 
-
     def update_UGV_obs_X_B_u(self, ugv):
         visited_pois = np.nonzero(self.stops_pois_AdjMatrix[ugv.cur_stop_id])[0]
         ugv.cur_loc_poi_value_array[visited_pois] = copy.deepcopy(self.poi_cur_value_array[visited_pois])
         ugv.obs_X_B_u[:, 2] = np.sum(ugv.cur_loc_poi_value_array * self.stops_pois_AdjMatrix, axis=1)
-
 
     def check_whether_hit(self, start_pos, move_vector):
         whether_hit_flag = False
@@ -681,23 +698,23 @@ class Env:
                 if abs(uav.final_energy) < 1e-5:
                     uav.final_energy = 0
 
-                wheather_collect_data_flag = False
+                whether_collect_data_flag = False
                 uav_cell_id = self.pos2cell_id(uav.final_pos)
                 if uav_cell_id in self.uav_cell2poi_dict:
                     available_poi_list = self.uav_cell2poi_dict[uav_cell_id]
                     uav.final_poi_visit_time[available_poi_list] += 1
                     self.final_poi_visit_time[available_poi_list] += 1
-                    # collect
+                    # 采集uav所有可采集范围内的poi
                     for poi_id in available_poi_list:
                         if self.poi_cur_value_array[poi_id] > 0:
-                            wheather_collect_data_flag = True
+                            whether_collect_data_flag = True
                         if self.poi_cur_value_array[poi_id] < self.env_conf['uav_collect_speed_per_poi']:
                             uav.final_data_collection[poi_id] += self.poi_cur_value_array[poi_id]
                             self.poi_cur_value_array[poi_id] = 0
                         else:
                             uav.final_data_collection[poi_id] += self.env_conf['uav_collect_speed_per_poi']
                             self.poi_cur_value_array[poi_id] -= self.env_conf['uav_collect_speed_per_poi']
-                if wheather_collect_data_flag:
+                if whether_collect_data_flag:
                     uav.final_collect_data_time += 1
                     self.final_total_collect_data_time += 1
 
@@ -738,37 +755,42 @@ class Env:
                                                               ugv_final_pos)
 
             # update UGV and UAVs cur info
+            # next_status=1, 无人车行驶，无人机不动
             if UGV_UAVs_Group.next_status == 1:
                 # do action for UGV
-                if self.method_conf['ugv_action_type'] == 'continue' and self.method_conf[
-                    'ugv_move_type'] == 'continue':
+                if self.method_conf['ugv_action_type'] == 'continue' and self.method_conf['ugv_move_type'] == 'continue':
                     self.ugv_move_ca_cm(ugv, action4UGV[:-1])
-                elif self.method_conf['ugv_action_type'] == 'continue' and self.method_conf[
-                    'ugv_move_type'] == 'discrete':
+                elif self.method_conf['ugv_action_type'] == 'continue' and self.method_conf['ugv_move_type'] == 'discrete':
                     self.ugv_move_ca_dm(ugv, action4UGV[:-1])
-                elif self.method_conf['ugv_action_type'] == 'discrete' and self.method_conf[
-                    'ugv_move_type'] == 'discrete':
+                elif self.method_conf['ugv_action_type'] == 'discrete' and self.method_conf['ugv_move_type'] == 'discrete':
                     self.ugv_move_da_dm(ugv, action4UGV[0])
                 # UAVs deliverd by UGV
                 for uav in UGV_UAVs_Group.uav_list:
                     self.uav_delivered_by_ugv(uav, ugv)
+            # next_status=2, 无人车等待，无人机飞行
             elif UGV_UAVs_Group.next_status == 2:
                 # do actions for UAVs
                 actions4UAVs = actions4UGV_UAVs_Group['UAVs']
                 for uav_id, action4UAV in enumerate(actions4UAVs):
                     uav = UGV_UAVs_Group.uav_list[uav_id]
                     self.uav_move_and_collect(uav, action4UAV, ugv_final_pos)
+            # next_status=3, 无人车召回无人机
             elif UGV_UAVs_Group.next_status == 3:
                 # update obs_X_B_u of UGV
                 self.update_UGV_obs_X_B_u(ugv)
+                # 释放无人机的总次数
                 self.final_total_relax_time += len(UGV_UAVs_Group.uav_list)
                 # UAVs back to UGV
                 for uav in UGV_UAVs_Group.uav_list:
                     self.uav_back_to_ugv(uav, ugv)
+                    # 释放无人机且收集到数据的释放次数
                     if uav.final_collect_data_time - uav.episode_log_info_dict['final_collect_data_time'][-(self.env_conf['wait_step_num'] + 1)] > 0:
                         self.final_total_eff_relax_time += 1
 
             # update UGV_UAVs_Group cur info
+            # 举例：召回无人机时
+            # last=2, next=3 -> last=3 last_length=1
+            # in subp133: last=3 and last_length>=call_step(1) 需要计算无人车动作，决定下一个status是1还是2
             if UGV_UAVs_Group.next_status != UGV_UAVs_Group.last_status:
                 UGV_UAVs_Group.last_status = UGV_UAVs_Group.next_status
                 UGV_UAVs_Group.last_status_length = 1

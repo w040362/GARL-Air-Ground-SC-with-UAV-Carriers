@@ -19,6 +19,11 @@ import torch.optim as optim
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 from typing import List
 
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import utm
+import shapefile
+
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 

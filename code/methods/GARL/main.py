@@ -54,6 +54,9 @@ def main():
         p.start()
 
     max_avg_eff = 0
+    max_avg_eff_iter = 0
+    max_eff = 0
+    max_eff_iter = 0
     for iter_id in range(method_conf['train_iter']):
         ################################## gen samples ####################################
         while True:
@@ -65,16 +68,26 @@ def main():
                     break
             if global_ifdone == method_conf['env_num']:
                 ################################## save good model ####################################
+                # get episode_metric of episode
                 mainlog.load_envs_info()
                 avg_eff = np.mean(mainlog.envs_info['eff'][-50:])
                 if avg_eff > max_avg_eff:
                     max_avg_eff = avg_eff
+                    max_avg_eff_iter = iter_id
                     mainlog.save_model(model_name='avg_good_ugv_model', model=ugv_network)
                     mainlog.save_model(model_name='avg_good_uav_model', model=uav_network)
+
+                eff = np.mean(mainlog.envs_info['eff'][iter_id])
+                if eff > max_eff:
+                    max_eff = eff
+                    max_eff_iter = iter_id
+                    mainlog.save_model(model_name='best_ugv_model', model=ugv_network)
+                    mainlog.save_model(model_name='best_uav_model', model=uav_network)
                 ################################## load sub_rollouts into rollout ##################################
                 ugv_rollout.reset()
                 uav_rollout.reset()
                 for env_id in range(method_conf['env_num']):
+                    # load sub_rollout
                     sub_rollout_dict = mainlog.load_sub_rollout_dict(env_id)
                     for ugv_id in range(env_conf['UGV_UAVs_Group_num']):
                         ugv_sub_rollout_id = str(ugv_id)
@@ -109,13 +122,19 @@ def main():
                              + '\n' \
                              + 'iter: ' + str(iter_id) \
                              + ' max_avg_eff: ' + str(np.round(max_avg_eff, 5)) \
+                             + ' max_avg_iter: ' + str(max_avg_eff_iter) \
+                             + ' avg_eff: ' + str(np.round(avg_eff, 5)) \
+                             + ' max_eff: ' + str(np.round(max_eff, 5)) \
+                             + ' max_iter: ' + str(max_eff_iter) \
                              + ' eff: ' + str(np.round(eff, 5)) \
+                             + '\n\t' \
                              + ' fairness: ' + str(np.round(fairness, 5)) \
                              + ' dcr: ' + str(np.round(dcr, 5)) \
                              + ' cor: ' + str(np.round(cor, 5)) \
                              + ' ecr: ' + str(np.round(ecr, 5)) \
                              + '\n'
                 print(report_str)
+                mainlog.record_report(report_str)
                 for shared_ifdone in shared_ifdone_list:
                     shared_ifdone.value = False
                 break

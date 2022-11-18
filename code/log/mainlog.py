@@ -28,7 +28,9 @@ class MainLog:
                 shutil.rmtree(self.log_path)
             os.makedirs(self.log_path)
         elif mode == 'test':
-            self.log_root_path = os.path.join(self.root_path, self.dataset_name, self.method_name)
+            self.param = "ugv_{}_uav_{}".format(self.env_conf['UGV_UAVs_Group_num'],
+                                                self.env_conf['uav_num_each_group'])
+            self.log_root_path = os.path.join(self.root_path, self.dataset_name, self.method_name, self.param)
             self.log_path = os.path.join(self.log_root_path, 'test')
             if not os.path.exists(self.log_path):
                 os.makedirs(self.log_path)
@@ -36,6 +38,12 @@ class MainLog:
     def save_model(self, model_name, model):
         self._model_path = os.path.join(self.log_path, model_name + '.pth')
         torch.save(model.state_dict(), self._model_path)
+
+    def record_report(self, report_str):
+        report_path = os.path.join(self.log_path, 'report.txt')
+        f = open(report_path, 'a')
+        f.writelines(report_str + '\n')
+        f.close()
 
     def load_envs_info(self, mode='train'):
         episode_metrics_result_list = []
